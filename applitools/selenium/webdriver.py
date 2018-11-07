@@ -18,6 +18,7 @@ from applitools.utils import cached_property, image_utils, general_utils
 from . import eyes_selenium_utils, StitchMode
 from .positioning import ElementPositionProvider, build_position_provider_for
 from .webelement import EyesWebElement
+from .frames import EyesFrame, FrameChain
 
 if tp.TYPE_CHECKING:
     from applitools.core.scaling import ScaleProvider
@@ -28,6 +29,7 @@ if tp.TYPE_CHECKING:
 class _EyesSwitchTo(object):
     """
     Wraps a selenium "SwitchTo" object, so we can keep track of switching between frames.
+    It has name EyesTargetLocator in other SDK's
     """
     # TODO: Make more similar to EyesTargetLocator
     _READONLY_PROPERTIES = ['alert', 'active_element']
@@ -77,7 +79,7 @@ class _EyesSwitchTo(object):
         self._switch_to.frame(frame_reference)
 
     def frames(self, frame_chain):
-        # type: (tp.List[EyesFrame]) -> None
+        # type: (FrameChain) -> None
         """
         Switches to the frames one after the other.
 
@@ -130,60 +132,6 @@ class _EyesSwitchTo(object):
         self._switch_to.window(window_name)
 
 
-class EyesFrame(object):
-    """
-    Encapsulates data about frames.
-    """
-
-    @staticmethod
-    def is_same_frame_chain(frame_chain1, frame_chain2):
-        # type: (tp.List[EyesFrame], tp.List[EyesFrame]) -> bool
-        """
-        Checks whether the two frame chains are the same or not.
-
-        :param frame_chain1: list of _EyesFrame instances, which represents a path to a frame.
-        :param frame_chain2: list of _EyesFrame instances, which represents a path to a frame.
-        :return: True if the frame chains ids are identical, otherwise False.
-        """
-        cl1, cl2 = len(frame_chain1), len(frame_chain2)
-        if cl1 != cl2:
-            return False
-        for i in range(cl1):
-            if frame_chain1[i].id_ != frame_chain2[i].id_:
-                return False
-        return True
-
-    def __init__(self, reference, location, size, id_, parent_scroll_position):
-        # type: (FrameReference, tp.Dict, tp.Dict, int, Point) -> None
-        """
-        Ctor.
-
-        :param reference: The reference to the frame.
-        :param location: The location of the frame.
-        :param size: The size of the frame.
-        :param id_: The id of the frame.
-        :param parent_scroll_position: The parents' scroll position.
-        """
-        self.reference = reference
-        self.location = location
-        self.size = size
-        self.id_ = id_
-        self.parent_scroll_position = parent_scroll_position
-
-    def clone(self):
-        # type: () -> EyesFrame
-        """
-        Clone the EyesFrame object.
-
-        :return: A cloned EyesFrame object.
-        """
-        return EyesFrame(self.reference, self.location.copy(), self.size.copy(), self.id_,
-                         self.parent_scroll_position.clone())
-
-    def __str__(self):
-        return "EyesFrame: {}".format(self.reference)
-
-
 class EyesWebDriver(object):
     """
     A wrapper for selenium web driver which creates wrapped elements, and notifies us about
@@ -218,7 +166,7 @@ class EyesWebDriver(object):
         self._position_provider = build_position_provider_for(stitch_mode, driver)
         # tp.List of frames the user switched to, and the current offset, so we can properly
         # calculate elements' coordinates
-        self._frames = []  # type: tp.List[EyesFrame]
+        self._frame_chain = FrameChain()
         self.driver_takes_screenshot = driver.capabilities.get('takesScreenshot', False)
 
         # Creating the rest of the driver interface by simply forwarding it to the underlying
@@ -307,7 +255,7 @@ class EyesWebDriver(object):
         :return: A driver that navigated to the given url.
         """
         # We're loading a new page, so the frame location resets
-        self._frames = []  # type: tp.List[EyesFrame]
+        self._frame_chain.clear()
         return self.driver.get(url)
 
     def find_element(self, by=By.ID, value=None):
@@ -651,7 +599,7 @@ class EyesWebDriver(object):
         :return: A list of EyesFrame instances which represents the path to the current frame.
             This can later be used as an argument to _EyesSwitchTo.frames().
         """
-        return [frame.clone() for frame in self._frames]
+        return FrameChain(self._frame_chain)
 
     def get_viewport_size(self):
         # type: () -> ViewPort
@@ -833,10 +781,10 @@ class EyesWebDriver(object):
         # make a screenshot of the viewport. So we scroll down to frame at _will_switch_to method
         # and add a left margin here.
         # TODO: Refactor code. Use EyesScreenshot
-        if self._frames:
+        if self._frame_chain:
             if ((self.browser_name == 'firefox' and self.browser_version < 60.0)
                     or self.browser_name in ('chrome', 'MicrosoftEdge', 'internet explorer', 'safari')):
-                element_region.left += int(self._frames[-1].location['x'])
+                element_region.left += int(self._frame_chain.peek.location['x'])
 
         screenshot_part_size = {'width': element_region.width,
                                 'height': max(element_region.height - self._MAX_SCROLL_BAR_SIZE,
@@ -867,11 +815,11 @@ class EyesWebDriver(object):
             part64 = self.get_screenshot_as_base64()
             part_image = image_utils.image_from_bytes(base64.b64decode(part64))
             # Cut to viewport size the full page screenshot of main frame for some browsers
-            if self._frames:
+            if self._frame_chain:
                 if (self.browser_name == 'firefox' and self.browser_version < 60.0
                         or self.browser_name in ('internet explorer', 'safari')):
                     # TODO: Refactor this to make main screenshot only once
-                    frame_scroll_position = int(self._frames[-1].location['y'])
+                    frame_scroll_position = int(self._frame_chain.peek.location['y'])
                     part_image = image_utils.get_image_part(part_image, Region(top=frame_scroll_position,
                                                                                height=viewport['height'],
                                                                                width=viewport['width']))
@@ -922,13 +870,13 @@ class EyesWebDriver(object):
             # in the get_stitched_screenshot  method
             self.scroll_to(Point(frame_location['x'], frame_location['y']))
 
-            self._frames.append(EyesFrame(frame_reference, frame_location, frame_size, frame_id,
-                                          parent_scroll_position))
+            self._frame_chain.append(EyesFrame(frame_reference, frame_location, frame_size, frame_id,
+                                               parent_scroll_position))
         elif frame_reference == _EyesSwitchTo.PARENT_FRAME:
-            self._frames.pop()
+            self._frame_chain.pop()
         else:
             # We moved out of the frames
-            self._frames = []
+            self._frame_chain.clear()
 
     @property
     def switch_to(self):
@@ -941,7 +889,7 @@ class EyesWebDriver(object):
         Return the current offset of the context we're in (e.g., due to switching into frames)
         """
         x, y = 0, 0
-        for frame in self._frames:
+        for frame in self._frame_chain:
             x += frame.location['x']
             y += frame.location['y']
         return Point(x, y)

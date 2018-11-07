@@ -10,9 +10,9 @@ from applitools.utils import image_utils
 
 if tp.TYPE_CHECKING:
     from PIL import Image
-
     from applitools.utils.custom_types import ViewPort
     from applitools.selenium import EyesWebDriver, eyes_selenium_utils
+    from applitools.selenium.frames import FrameChain
 
 
 class EyesWebDriverScreenshot(EyesScreenshot):
@@ -124,7 +124,7 @@ class EyesWebDriverScreenshot(EyesScreenshot):
         return location_in_screenshot
 
     def get_frame_chain(self):
-        return [frame.clone() for frame in self._frame_chain]
+        return FrameChain(self._frame_chain)
 
     def get_base64(self):
         if not self._screenshot64:

@@ -18,7 +18,7 @@ from applitools.core.geometry import Region
 from applitools.core.scaling import ContextBasedScaleProvider, FixedScaleProvider
 from applitools.utils import image_utils
 from . import eyes_selenium_utils
-from .webdriver import EyesFrame, EyesWebDriver
+from .webdriver import EyesWebDriver
 from .capture import EyesWebDriverScreenshot, dom_capture
 from .target import Target
 from .positioning import build_position_provider_for, StitchMode
@@ -437,8 +437,7 @@ class Eyes(EyesBase):
         if self._last_screenshot is None:
             logger.debug("add_mouse_trigger: Ignoring %s (no screenshot)" % action)
             return
-        if not EyesFrame.is_same_frame_chain(self._driver.get_frame_chain(),
-                                             self._last_screenshot.get_frame_chain()):
+        if not self._driver.get_frame_chain() == self._last_screenshot.get_frame_chain():
             logger.debug("add_mouse_trigger: Ignoring %s (different frame)" % action)
             return
         control = self._last_screenshot.get_intersected_region_by_element(element)
@@ -466,8 +465,7 @@ class Eyes(EyesBase):
         if self._last_screenshot is None:
             logger.debug("add_text_trigger: Ignoring '%s' (no screenshot)" % text)
             return
-        if not EyesFrame.is_same_frame_chain(self._driver.get_frame_chain(),
-                                             self._last_screenshot.get_frame_chain()):
+        if not self._driver.get_frame_chain() == self._last_screenshot.get_frame_chain():
             logger.debug("add_text_trigger: Ignoring %s (different frame)" % text)
             return
         control = self._last_screenshot.get_intersected_region_by_element(element)
