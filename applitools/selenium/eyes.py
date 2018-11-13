@@ -387,7 +387,9 @@ class Eyes(EyesBase):
         :param target: (Target) The target for the check_window call
         :return: None
         """
-        logger.debug("calling 'check_region_by_element'...")
+        logger.debug("calling 'check_region_by_selector'...")
+        # hack: prevent stale element exception by saving viewport value before catching element
+        self._driver.get_default_content_viewport_size()
         self.check_region_by_element(self._driver.find_element(by, value), tag,
                                      match_timeout, target, stitch_content)
 

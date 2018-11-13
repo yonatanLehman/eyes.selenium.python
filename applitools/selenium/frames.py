@@ -15,10 +15,10 @@ class Frame(object):
     and it's actual type is determined by the reference used by the user in
     order to switch into the frame.
     """
-    __slots__ = ('reference', 'location', 'outer_size', 'inner_size', 'original_location',
+    __slots__ = ('reference', 'location', 'outer_size', 'inner_size', 'parent_scroll_position',
                  '_scroll_root_element', '_original_overflow')
 
-    def __init__(self, reference, location, outer_size, inner_size, original_location):
+    def __init__(self, reference, location, outer_size, inner_size, parent_scroll_position):
         # type: (FrameReference, Point, RectangleSize, RectangleSize, Point) -> None
         """
         :param reference:         The web element for the frame, used as a reference to switch into the frame.
@@ -27,7 +27,7 @@ class Frame(object):
         (i.e., the outer_size of the frame on the screen, not the internal document outer_size).
         :param inner_size:        The frame element inner outerSize
         (i.e., the outer_size of the frame actual outer_size, without borders).
-        :param original_location: The scroll location of the frame.
+        :param parent_scroll_position: The scroll location of the frame.
         """
         self._scroll_root_element = None
         self._original_overflow = None
@@ -36,7 +36,7 @@ class Frame(object):
         self.location = location
         self.outer_size = outer_size
         self.inner_size = inner_size
-        self.original_location = original_location
+        self.parent_scroll_position = parent_scroll_position
 
     def __str__(self):
         return "Frame: {}".format(self.reference)
@@ -49,7 +49,7 @@ class FrameChain(tp.Sequence[Frame]):
         self._frames = []
         if frame_chain is not None:
             assert isinstance(frame_chain, FrameChain), 'Must be a FrameChain'
-            self._frames = copy.deepcopy(frame_chain._frames)
+            self._frames = copy.copy(frame_chain._frames)
 
     def __iter__(self):
         return iter(self._frames)

@@ -52,6 +52,11 @@ class Point(object):
     def __bool__(self):
         return self.x and self.y
 
+    def __getitem__(self, item):
+        if item not in ('x', 'y'):
+            raise KeyError
+        return getattr(self, item)
+
     @classmethod
     def create_top_left(cls):
         return cls(0, 0)

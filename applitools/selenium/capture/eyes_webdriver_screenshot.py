@@ -72,7 +72,7 @@ class EyesWebDriverScreenshot(EyesScreenshot):
         self._frame_chain = driver.get_frame_chain()
         if self._frame_chain:
             chain_len = len(self._frame_chain)
-            self._frame_size = self._frame_chain[chain_len - 1].size
+            self._frame_size = self._frame_chain[chain_len - 1].outer_size
         else:
             try:
                 self._frame_size = driver.get_entire_page_size()

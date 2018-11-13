@@ -145,8 +145,9 @@ class _EyesSwitchTo(object):
         original_location = self._scroll_position.get_current_position()
         self._driver.scroll_to(Point(pl['x'], pl['y']))
 
-        self._driver.scroll_to(original_location)
-        frame = Frame(target_frame, content_location, target_frame.size, frame_inner_size, original_location)
+        self._driver.scroll_to(content_location)
+        frame = Frame(target_frame, content_location, target_frame.size, frame_inner_size,
+                      parent_scroll_position=original_location)
         self._driver.get_frame_chain().push(frame)
 
 
