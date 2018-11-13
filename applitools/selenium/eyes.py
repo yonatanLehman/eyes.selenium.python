@@ -3,7 +3,6 @@ from __future__ import absolute_import
 import base64
 import contextlib
 import typing as tp
-import warnings
 
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
@@ -484,6 +483,6 @@ class Eyes(EyesBase):
             dom_json = dom_capture.get_full_window_dom(self._driver)
             return dom_json
         except Exception as e:
-            warnings.warn(
+            logger.warning(
                 'Exception raising during capturing DOM Json. Passing...\n Got next error: {}'.format(str(e)))
             return None

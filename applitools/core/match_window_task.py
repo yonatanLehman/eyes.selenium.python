@@ -1,6 +1,5 @@
 from __future__ import absolute_import
 
-import warnings
 import functools
 import time
 import typing as tp
@@ -136,7 +135,7 @@ class MatchWindowTask(object):
             if dom_json:
                 dom_url = self._eyes.try_post_dom_snapshot(dom_json)
                 if dom_url is None:
-                    warnings.warn('Failed to upload DOM. Skipping...')
+                    logger.warning('Failed to upload DOM. Skipping...')
                 else:
                     app_output['DomUrl'] = dom_url
 

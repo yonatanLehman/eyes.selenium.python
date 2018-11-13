@@ -3,7 +3,6 @@ from __future__ import absolute_import
 import abc
 import os
 import uuid
-import warnings
 import typing as tp
 from datetime import datetime
 
@@ -612,5 +611,5 @@ class EyesBase(ABC):
         try:
             return self._agent_connector.post_dom_snapshot(dom_json)
         except Exception as e:
-            warnings.warn("Couldn't send DOM Json. Passing...\n Got next error: {}".format(e))
+            logger.warning("Couldn't send DOM Json. Passing...\n Got next error: {}".format(e))
             return None

@@ -1,7 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
 import json
-import warnings
 import typing as tp
 import multiprocessing as mp
 from collections import OrderedDict
@@ -251,7 +250,7 @@ def _process_raw_css_node(node, minimize_css=True):
     @general_utils.retry()
     def get_css(url):
         if url.startswith('blob:'):
-            warnings.warn('Passing blob URL: {}'.format(url))
+            logger.warning('Passing blob URL: {}'.format(url))
             return ''
         return requests.get(url, timeout=CSS_DOWNLOAD_TIMEOUT).text.strip()
 
@@ -294,13 +293,13 @@ def _parse_and_serialize_css(node, text, minimize=False):
                     # remove whitespaces inside blocks
                     style_node.content = [tok for tok in style_node.content if tok.type != 'whitespace']
                 except AttributeError as e:
-                    warnings.warn("Cannot serialize item: {}, cause error: {}".format(style_node, str(e)))
+                    logger.warning("Cannot serialize item: {}, cause error: {}".format(style_node, str(e)))
             serialized = style_node.serialize()
             if minimize:
                 serialized = serialized.replace('\n', '').replace('/**/', ' ').replace(' {', '{')
 
         except TypeError as e:
-            warnings.warn(str(e))
+            logger.warning(str(e))
             continue
         yield CssNode.create_serialized_node(text=serialized)
 
