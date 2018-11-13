@@ -67,7 +67,7 @@ class EyesWebDriverScreenshot(EyesScreenshot):
         super(EyesWebDriverScreenshot, self).__init__(image=screenshot)
 
         self._driver = driver
-        self._viewport_size = driver.get_default_content_viewport_size()  # type: ViewPort
+        self._viewport_size = driver.get_default_content_viewport_size(force_query=False)  # type: ViewPort
 
         self._frame_chain = driver.get_frame_chain()
         if self._frame_chain:

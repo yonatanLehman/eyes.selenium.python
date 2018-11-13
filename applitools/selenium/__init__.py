@@ -5,9 +5,9 @@ from .webdriver import EyesWebDriver
 from .webelement import EyesWebElement
 from .target import (IgnoreRegionByElement, IgnoreRegionBySelector, FloatingBounds, FloatingRegion,
                      FloatingRegionByElement, FloatingRegionBySelector, Target)
-from .frames import EyesFrame
+from .frames import Frame
 
 __all__ = (
         target.__all__ +  # noqa
-        ('Eyes', 'EyesWebElement', 'EyesWebDriver', 'EyesFrame', 'EyesWebDriverScreenshot',
+        ('Eyes', 'EyesWebElement', 'EyesWebDriver', 'Frame', 'EyesWebDriverScreenshot',
          'StitchMode', 'dom_capture'))

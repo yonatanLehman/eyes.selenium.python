@@ -6,6 +6,7 @@ import time
 import typing as tp
 
 from PIL import Image
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.switch_to import SwitchTo
 from selenium.webdriver.remote.webdriver import WebDriver
@@ -16,14 +17,32 @@ from applitools.core.errors import EyesError
 from applitools.core.geometry import Point, Region
 from applitools.utils import cached_property, image_utils, general_utils
 from . import eyes_selenium_utils, StitchMode
-from .positioning import ElementPositionProvider, build_position_provider_for
+from .positioning import ElementPositionProvider, build_position_provider_for, ScrollPositionProvider
 from .webelement import EyesWebElement
-from .frames import EyesFrame, FrameChain
+from .frames import Frame, FrameChain
 
 if tp.TYPE_CHECKING:
     from applitools.core.scaling import ScaleProvider
     from applitools.utils.custom_types import Num, ViewPort, FrameReference, AnyWebDriver, AnyWebElement
     from .eyes import Eyes
+
+
+class FrameResolver(object):
+    def __init__(self, frame_ref, driver):
+        # Find the frame's location and add it to the current driver offset
+        if isinstance(frame_ref, str):
+            frame_eyes_webelement = driver.find_element_by_name(frame_ref)
+        elif isinstance(frame_ref, int):
+            frame_elements_list = driver.find_elements_by_css_selector('frame, iframe')
+            frame_eyes_webelement = frame_elements_list[frame_ref]
+        elif isinstance(frame_ref, EyesWebElement):
+            frame_eyes_webelement = frame_ref
+        else:
+            # It must be a WebElement
+            frame_eyes_webelement = EyesWebElement(frame_ref, driver)
+
+        self.eyes_webelement = frame_eyes_webelement
+        self.webelement = frame_eyes_webelement.element
 
 
 class _EyesSwitchTo(object):
@@ -44,7 +63,8 @@ class _EyesSwitchTo(object):
         :param switch_to: Selenium switchTo object.
         """
         self._switch_to = switch_to
-        self._driver = driver  # type: AnyWebDriver
+        self._driver = driver
+        self._scroll_position = ScrollPositionProvider(driver)
         general_utils.create_proxy_interface(self, switch_to, self._READONLY_PROPERTIES)
 
     @contextlib.contextmanager
@@ -61,22 +81,9 @@ class _EyesSwitchTo(object):
 
         :param frame_reference: The reference to the frame.
         """
-        # Find the frame's location and add it to the current driver offset
-        if isinstance(frame_reference, str):
-            frame_element = self._driver.find_element_by_name(frame_reference)
-        elif isinstance(frame_reference, int):
-            frame_elements_list = self._driver.find_elements_by_css_selector('frame, iframe')
-            frame_element = frame_elements_list[frame_reference]
-            # TODO: Fix bug with IndexError which has been shown in _traverse_dom_tree
-        else:
-            # It must be a WebElement
-            if isinstance(frame_reference, EyesWebElement):
-                frame_reference = frame_reference.element
-            frame_element = frame_reference
-        # Calling the underlying "SwitchTo" object
-        # noinspection PyProtectedMember
-        self._driver._will_switch_to(frame_reference, frame_element)
-        self._switch_to.frame(frame_reference)
+        frame = FrameResolver(frame_reference, self._driver)
+        self.will_switch_to_frame(frame.eyes_webelement)
+        self._switch_to.frame(frame.webelement)
 
     def frames(self, frame_chain):
         # type: (FrameChain) -> None
@@ -85,8 +92,8 @@ class _EyesSwitchTo(object):
 
         :param frame_chain: A list of frames.
         """
+        self._switch_to.default_content()
         for frame in frame_chain:
-            self._driver.scroll_to(frame.parent_scroll_position)
             self.frame(frame.reference)
 
     def default_content(self):
@@ -94,42 +101,53 @@ class _EyesSwitchTo(object):
         """
         Switch to default content.
         """
-        # We should only do anything if we're inside a frame.
-        if self._driver.get_frame_chain():
-            # This call resets the driver's current frame location
-            # noinspection PyProtectedMember
-            self._driver._will_switch_to(None)
-            self._switch_to.default_content()
+        self._driver.get_frame_chain().clear()
+        self._switch_to.default_content()
 
     def parent_frame(self):
         """
         Switch to parent frame.
         """
-        # IMPORTANT We implement switching to parent frame ourselves here, since it's not yet
-        # implemented by the webdriver.
-
-        # Notice that this is a COPY of the frames.
         frames = self._driver.get_frame_chain()
         if frames:
             frames.pop()
 
-            # noinspection PyProtectedMember
-            self._driver._will_switch_to(_EyesSwitchTo.PARENT_FRAME)
-
-            self.default_content()
-            self.frames(frames)
+            try:
+                self._switch_to.parent_frame()
+            except WebDriverException as e:
+                self._switch_to.default_content()
+                for frame in frames:
+                    self._switch_to.frame(frame.reference)
 
     def window(self, window_name):
         # type: (tp.Text) -> None
         """
         Switch to window.
-
-        :param window_name: The window name to switch to.
-        :return:The switched to window object.
         """
-        # noinspection PyProtectedMember
-        self._driver._will_switch_to(None)
+        self._driver.get_frame_chain().clear()
         self._switch_to.window(window_name)
+
+    def will_switch_to_frame(self, target_frame):
+        # type: (EyesWebElement) -> None
+        """
+        Will be called before switching into a frame.
+
+        :param target_frame: The element about to be switched to.
+        """
+        assert target_frame is not None
+        pl = target_frame.location
+
+        size_and_borders = target_frame.size_and_borders
+        borders = size_and_borders.borders
+        frame_inner_size = size_and_borders.size
+
+        content_location = Point(pl['x'] + borders['left'], pl['y'] + borders['top'])
+        original_location = self._scroll_position.get_current_position()
+        self._driver.scroll_to(Point(pl['x'], pl['y']))
+
+        self._driver.scroll_to(original_location)
+        frame = Frame(target_frame, content_location, target_frame.size, frame_inner_size, original_location)
+        self._driver.get_frame_chain().push(frame)
 
 
 class EyesWebDriver(object):
@@ -167,6 +185,8 @@ class EyesWebDriver(object):
         # tp.List of frames the user switched to, and the current offset, so we can properly
         # calculate elements' coordinates
         self._frame_chain = FrameChain()
+        self._default_content_viewport_size = None  # type: ViewPort
+
         self.driver_takes_screenshot = driver.capabilities.get('takesScreenshot', False)
 
         # Creating the rest of the driver interface by simply forwarding it to the underlying
@@ -271,7 +291,7 @@ class EyesWebDriver(object):
         result = self.driver.find_element(by, value)
         # Wrap the element.
         if result:
-            result = EyesWebElement(result, self._eyes, self)
+            result = EyesWebElement(result, self)
         return result
 
     def find_elements(self, by=By.ID, value=None):
@@ -289,7 +309,7 @@ class EyesWebDriver(object):
         if results:
             updated_results = []
             for element in results:
-                updated_results.append(EyesWebElement(element, self._eyes, self))
+                updated_results.append(EyesWebElement(element, self))
             results = updated_results
         return results
 
@@ -596,10 +616,10 @@ class EyesWebDriver(object):
         """
         Gets the frame chain.
 
-        :return: A list of EyesFrame instances which represents the path to the current frame.
+        :return: A list of Frame instances which represents the path to the current frame.
             This can later be used as an argument to _EyesSwitchTo.frames().
         """
-        return FrameChain(self._frame_chain)
+        return self._frame_chain
 
     def get_viewport_size(self):
         # type: () -> ViewPort
@@ -609,19 +629,27 @@ class EyesWebDriver(object):
         """
         return eyes_selenium_utils.get_viewport_size(self)
 
-    def get_default_content_viewport_size(self):
-        # type: () -> ViewPort
+    def get_default_content_viewport_size(self, force_query=True):
+        # type: (bool) -> ViewPort
         """
         Gets the viewport size.
 
         :return: The viewport size of the most outer frame.
         """
-        current_frames = self.get_frame_chain()
+        if self._default_content_viewport_size and not force_query:
+            return self._default_content_viewport_size
+
+        current_frames = self.get_frame_chain().clone()
         # If we're inside a frame, then we should first switch to the most outer frame.
-        self.switch_to.default_content()
-        viewport_size = self.get_viewport_size()
-        self.switch_to.frames(current_frames)
-        return viewport_size
+        # Optimization
+        if current_frames:
+            self.switch_to.default_content()
+        self._default_content_viewport_size = self.get_viewport_size()
+
+        if current_frames:
+            self.switch_to.frames(current_frames)
+
+        return self._default_content_viewport_size
 
     def reset_origin(self):
         # type: () -> None
@@ -784,7 +812,7 @@ class EyesWebDriver(object):
         if self._frame_chain:
             if ((self.browser_name == 'firefox' and self.browser_version < 60.0)
                     or self.browser_name in ('chrome', 'MicrosoftEdge', 'internet explorer', 'safari')):
-                element_region.left += int(self._frame_chain.peek.location['x'])
+                element_region.left += int(self._frame_chain.peek.location.x)
 
         screenshot_part_size = {'width': element_region.width,
                                 'height': max(element_region.height - self._MAX_SCROLL_BAR_SIZE,
@@ -819,7 +847,7 @@ class EyesWebDriver(object):
                 if (self.browser_name == 'firefox' and self.browser_version < 60.0
                         or self.browser_name in ('internet explorer', 'safari')):
                     # TODO: Refactor this to make main screenshot only once
-                    frame_scroll_position = int(self._frame_chain.peek.location['y'])
+                    frame_scroll_position = int(self._frame_chain.peek.location.y)
                     part_image = image_utils.get_image_part(part_image, Region(top=frame_scroll_position,
                                                                                height=viewport['height'],
                                                                                width=viewport['width']))
@@ -838,45 +866,6 @@ class EyesWebDriver(object):
             element.set_overflow(origin_overflow)
 
         return stitched_image
-
-    def _will_switch_to(self, frame_reference, frame_element=None):
-        # type: (tp.Optional[FrameReference], AnyWebElement) -> None
-        """
-        Updates the current webdriver that a switch was made to a frame element.
-
-        :param frame_reference: The reference to the frame.
-        :param frame_element: The frame element instance.
-        """
-        if frame_element is not None:
-            frame_location = frame_element.location
-            frame_size = frame_element.size
-            frame_id = frame_element.id
-            parent_scroll_position = self.get_current_position()
-            # Frame border can affect location calculation for elements.
-            # noinspection PyBroadException
-            try:
-                frame_left_border_width = int(frame_element
-                                              .value_of_css_property('border-left-width')
-                                              .rstrip('px'))
-                frame_top_border_width = int(frame_element.value_of_css_property('border-top-width')
-                                             .rstrip('px'))
-            except Exception:
-                frame_left_border_width = 0
-                frame_top_border_width = 0
-            frame_location['x'] += frame_left_border_width
-            frame_location['y'] += frame_top_border_width
-
-            # We need to scroll position to top of the frame to be able to take a correct screenshot
-            # in the get_stitched_screenshot  method
-            self.scroll_to(Point(frame_location['x'], frame_location['y']))
-
-            self._frame_chain.append(EyesFrame(frame_reference, frame_location, frame_size, frame_id,
-                                               parent_scroll_position))
-        elif frame_reference == _EyesSwitchTo.PARENT_FRAME:
-            self._frame_chain.pop()
-        else:
-            # We moved out of the frames
-            self._frame_chain.clear()
 
     @property
     def switch_to(self):

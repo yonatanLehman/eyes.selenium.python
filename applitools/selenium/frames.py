@@ -1,53 +1,55 @@
 import copy
-
 import typing as tp
 
 from applitools.core import Point, EyesError
 
 if tp.TYPE_CHECKING:
-    from applitools.utils.custom_types import FrameReference
+    from applitools.utils.custom_types import FrameReference, RectangleSize
 
-__all__ = ('EyesFrame', 'FrameChain')
+__all__ = ('Frame', 'FrameChain')
 
 
-class EyesFrame(object):
+class Frame(object):
     """
-    Encapsulates data about frames.
+    Encapsulates a frame/iframe. This is a generic type class,
+    and it's actual type is determined by the reference used by the user in
+    order to switch into the frame.
     """
-    __slots__ = ('reference', 'location', 'size', 'id', 'parent_scroll_position')
+    __slots__ = ('reference', 'location', 'outer_size', 'inner_size', 'original_location',
+                 '_scroll_root_element', '_original_overflow')
 
-    def __init__(self, reference, location, size, id_, parent_scroll_position):
-        # type: (FrameReference, tp.Dict, tp.Dict, int, Point) -> None
+    def __init__(self, reference, location, outer_size, inner_size, original_location):
+        # type: (FrameReference, Point, RectangleSize, RectangleSize, Point) -> None
         """
-        Ctor.
+        :param reference:         The web element for the frame, used as a reference to switch into the frame.
+        :param location:          The location of the frame within the current frame.
+        :param outer_size:        The frame element outerSize
+        (i.e., the outer_size of the frame on the screen, not the internal document outer_size).
+        :param inner_size:        The frame element inner outerSize
+        (i.e., the outer_size of the frame actual outer_size, without borders).
+        :param original_location: The scroll location of the frame.
+        """
+        self._scroll_root_element = None
+        self._original_overflow = None
 
-        :param reference: The reference to the frame.
-        :param location: The location of the frame.
-        :param size: The size of the frame.
-        :param id_: The id of the frame.
-        :param parent_scroll_position: The parents' scroll position.
-        """
         self.reference = reference
         self.location = location
-        self.size = size
-        self.id = id_
-        self.parent_scroll_position = parent_scroll_position
+        self.outer_size = outer_size
+        self.inner_size = inner_size
+        self.original_location = original_location
 
     def __str__(self):
-        return "EyesFrame: {}".format(self.reference)
-
-    def __len__(self):
-        return self.size
+        return "Frame: {}".format(self.reference)
 
 
-class FrameChain(tp.Sequence[EyesFrame]):
+class FrameChain(tp.Sequence[Frame]):
     __slots__ = ('_frames',)
 
     def __init__(self, frame_chain=None):
         self._frames = []
         if frame_chain is not None:
             assert isinstance(frame_chain, FrameChain), 'Must be a FrameChain'
-            self._frames = copy.deepcopy(frame_chain)
+            self._frames = copy.deepcopy(frame_chain._frames)
 
     def __iter__(self):
         return iter(self._frames)
@@ -58,7 +60,7 @@ class FrameChain(tp.Sequence[EyesFrame]):
     def __len__(self):
         return len(self._frames)
 
-    def __repr__(self):
+    def __str__(self):
         return 'FrameChain with {} frames'.format(len(self))
 
     def __eq__(self, other):
@@ -68,16 +70,22 @@ class FrameChain(tp.Sequence[EyesFrame]):
         self._frames = []
 
     @property
+    def size(self):
+        return len(self)
+
+    @property
     def peek(self):
-        # type: () -> EyesFrame
+        # type: () -> Frame
         return self[-1]
 
-    def append(self, frame):
-        assert isinstance(frame, EyesFrame), 'frame must be instance of EyesFrame!'
+    def push(self, frame):
+        # type: (Frame) -> None
+        assert isinstance(frame, Frame), 'frame must be instance of Frame!'
         self._frames.append(frame)
 
     def pop(self):
-        self._frames.pop()
+        # type: () -> Frame
+        return self._frames.pop()
 
     @property
     def current_frame_offset(self):
@@ -89,8 +97,13 @@ class FrameChain(tp.Sequence[EyesFrame]):
 
     @property
     def current_frame_size(self):
-        # type: () -> int
-        return len(self.peek)
+        # type: () -> RectangleSize
+        return self.peek.inner_size
+
+    @property
+    def current_frame_inner_size(self):
+        # type: () -> RectangleSize
+        return self.peek.outer_size
 
     @property
     def default_content_scroll_position(self):
@@ -99,3 +112,7 @@ class FrameChain(tp.Sequence[EyesFrame]):
             raise EyesError('No frames in frame chain')
         result = self[0].parent_scroll_position
         return Point(result.x, result.y)
+
+    def clone(self):
+        # type: () -> FrameChain
+        return FrameChain(self)
