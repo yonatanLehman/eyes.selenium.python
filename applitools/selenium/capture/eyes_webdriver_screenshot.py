@@ -7,6 +7,7 @@ from selenium.common.exceptions import WebDriverException
 
 from applitools.core import EyesScreenshot, EyesError, Point, Region, OutOfBoundsError
 from applitools.utils import image_utils
+from applitools.selenium import eyes_selenium_utils
 
 if tp.TYPE_CHECKING:
     from PIL import Image

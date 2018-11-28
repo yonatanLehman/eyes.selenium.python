@@ -162,7 +162,9 @@ class EyesWebDriver(object):
                             'desired_capabilities', 'log_types', 'name', 'page_source', 'title',
                             'window_handles', 'switch_to', 'mobile', 'current_context', 'context',
                             'current_activity', 'network_connection', 'available_ime_engines',
-                            'active_ime_engine', 'device_time', 'w3c', 'contexts', 'current_package']
+                            'active_ime_engine', 'device_time', 'w3c', 'contexts', 'current_package',
+                            # Appium specific
+                            'battery_info']
     _SETTABLE_PROPERTIES = ['orientation', 'file_detector']
 
     # This should pretty much cover all scroll bars (and some fixed position footer elements :) ).
@@ -186,7 +188,7 @@ class EyesWebDriver(object):
         # tp.List of frames the user switched to, and the current offset, so we can properly
         # calculate elements' coordinates
         self._frame_chain = FrameChain()
-        self._default_content_viewport_size = None  # type: ViewPort
+        self._default_content_viewport_size = None  # type: tp.Optional[ViewPort]
 
         self.driver_takes_screenshot = driver.capabilities.get('takesScreenshot', False)
 
@@ -630,7 +632,7 @@ class EyesWebDriver(object):
         """
         return eyes_selenium_utils.get_viewport_size(self)
 
-    def get_default_content_viewport_size(self, force_query=True):
+    def get_default_content_viewport_size(self, force_query=False):
         # type: (bool) -> ViewPort
         """
         Gets the viewport size.
@@ -645,7 +647,7 @@ class EyesWebDriver(object):
         # Optimization
         if current_frames:
             self.switch_to.default_content()
-        self._default_content_viewport_size = self.get_viewport_size()
+        self._default_content_viewport_size = eyes_selenium_utils.get_viewport_size_or_display_size(self.driver)
 
         if current_frames:
             self.switch_to.frames(current_frames)
